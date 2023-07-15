@@ -47,15 +47,11 @@ class TCN(nn.Module):
         :return:
         """
         x = torch.permute(x, [0, 2, 3, 1]).contiguous()
-        x = torch.unsqueeze(x, dim=0)
+        x = torch.unsqueeze(x, dim=1)
 
         # 3d conv
         x = F.relu(self.conv1(x))
-        x = x.squeeze()
-
-        # what if batch-size is 1 ??? then error occurs
-        if len(x.size()) == 1:
-            x = torch.unsqueeze(x, dim=0)
+        x = torch.squeeze(x)
 
         # 1d conv
         x = self.dropout(F.relu(self.conv2(x)))
@@ -64,7 +60,10 @@ class TCN(nn.Module):
         x = self.dropout(F.relu(self.conv5(x)))
         x = x.view(-1, self.output_features)
 
-        out = F.relu(self.fc1(x))
+        out = F.relu(self.fc(x))
+
+        if out.shape[0] == 1:
+            out = out.squeeze()
 
         return out
 
