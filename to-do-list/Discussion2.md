@@ -4,6 +4,6 @@
 
    ​		1.2  Items include item3, 4, 5, 10, 13
 
-   2. Graph Attention
+1. Graph Attention
 
-      ​        2.1 Build Model ST-GCN-Attention
+   ​		2.1  Build Graph Attention model
