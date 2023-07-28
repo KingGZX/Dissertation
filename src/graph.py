@@ -6,6 +6,7 @@ class Graph:
     """
     build a human body graph
     """
+
     def __init__(self, max_hop=1):
         self.adjacency = None
         self.center = None
@@ -19,7 +20,7 @@ class Graph:
     def get_edges(self):
         self.num_node = len(Config.nodes)
         self_link = [(i, i) for i in range(self.num_node)]
-                         # pelvis -> neck, upper leg   neck -> head, shoulder
+        # pelvis -> neck, upper leg   neck -> head, shoulder
         neighbor_link = [(0, 1), (0, 11), (0, 15), (1, 2), (1, 3), (1, 7),
                          # shoulder -> upper arm  upper arm ->forearm
                          (3, 4), (4, 5), (5, 6), (7, 8), (8, 9), (9, 10),
@@ -27,7 +28,7 @@ class Graph:
                          (11, 12), (12, 13), (13, 14), (15, 16), (16, 17), (17, 18)]
         self.edge = self_link + neighbor_link
         self.center = 0  # use pelvis as the center of body
-        
+
     def get_adjacency(self):
         """
         use uniform partition to have a test first:
@@ -38,6 +39,7 @@ class Graph:
         self.adjacency[0][self.hop_dis <= self.max_hop] = 1
         # normalization
         self.adjacency[0] = undirected_graph_norm(self.adjacency[0])
+
 
 def get_hop_distance(num_node, edge, max_hop=1):
     A = np.zeros((num_node, num_node))
@@ -83,7 +85,6 @@ def undirected_graph_norm(adjacency):
     deg_matrix = np.multiply(np.identity(len(degree)), degree)
     adjacency = np.dot(np.dot(deg_matrix, adjacency), adjacency)
     return adjacency
-
 
 # code for debugging
 # ins = Graph()
