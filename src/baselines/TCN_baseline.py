@@ -1,5 +1,5 @@
 import torch
-from loadata import Config
+from utils.loadata import Config
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -66,4 +66,3 @@ class TCN(nn.Module):
             out = out.squeeze()
 
         return out
-
