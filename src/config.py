@@ -17,13 +17,6 @@ class Config:
     #          "Right Foot", "Right Toe", "Left Upper Leg", "Left Lower Leg",
     #          "Left Foot", "Left Toe"]
 
-    # including center of mass
-    # nodes = ["Pelvis", "Neck", "Head", "Right Shoulder", "Right Upper Arm",
-    #          "Right Forearm", "Right Hand", "Left Shoulder", "Left Upper Arm",
-    #          "Left Forearm", "Left Hand", "Right Upper Leg", "Right Lower Leg",
-    #          "Right Foot", "Right Toe", "Left Upper Leg", "Left Lower Leg",
-    #          "Left Foot", "Left Toe", "Center of Mass"]
-
     # including spines
     nodes = ["Pelvis", "L3 Spine", "T12 Spine", "T8 Spine",
              "Neck", "Head", "Right Shoulder", "Right Upper Arm",
