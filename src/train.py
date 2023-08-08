@@ -3,6 +3,7 @@ import torch.optim as optim
 import torch.nn as nn
 from utils.plot import *
 from loadata import Config
+from utils.log import get_logger
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 dtype = torch.float32
@@ -20,16 +21,24 @@ def joint_train(net, dst, baseline: str, cfg: Config, epochs=20):
     criterion = nn.CrossEntropyLoss()
     batches = len(dst.train_data)
 
+    logger = get_logger(
+        filename="./loggings/exp.log",
+        verbosity=1
+    )
+
     item_train_acc_list_list = list([] for i in range(epochs))
     item_test_acc_list_list = list([] for i in range(epochs))
 
     for epoch in range(epochs):
+
+        logger.info("training epoch {}".format(epoch + 1))
+
         item_correct_list = list(0 for i in cfg.item)
         nloss = 0
         correct = 0
         dst.shuffle()
         for batch in range(batches):
-            train_data, train_labels = dst.load_data()
+            train_data, train_labels, _, _ = dst.load_data()
             train_data = torch.tensor(train_data, dtype=torch.float32)
             for i in range(len(train_labels)):
                 train_labels[i] = torch.tensor(train_labels[i])
@@ -43,6 +52,11 @@ def joint_train(net, dst, baseline: str, cfg: Config, epochs=20):
 
             loss = torch.tensor(0)
             loss = loss.to(device, dtype=dtype)
+
+            # L1 Regularization
+            # lamda = 0.0002
+            # for param in net.parameters():
+            #     loss += torch.norm(param, 1) * lamda
 
             for i in range(len(train_labels)):
                 item_loss = criterion(output[i], train_labels[i])
@@ -82,15 +96,15 @@ def joint_train(net, dst, baseline: str, cfg: Config, epochs=20):
         for item_correct in item_correct_list:
             item_train_acc_list_list[epoch].append(item_correct / batches)
 
-        print("Epoch {}/{}:, average loss is {}".format(epoch + 1, epochs, nloss / batches))
-        # print("Epoch {}/{}:, average accuracy is {}".format(epoch + 1, epochs, correct / batches))
+        logger.info("Epoch {}/{}:, average loss is {}".format(epoch + 1, epochs, nloss / batches))
+        print("Epoch {}/{}:, average accuracy is {}".format(epoch + 1, epochs, correct / batches))
 
         # for i in range(len(cfg.item)):
         # print("Epoch {}/{}:, average accuracy of item {} is {}".format(epoch + 1, epochs,
         # cfg.label_dict["item" + str(cfg.item[i])]
         # , item_train_acc_list_list[epoch][i]))
 
-        item_acc_list = joint_validation(net, dst, cfg)
+        item_acc_list = joint_validation(net, dst, cfg, logger)
         item_test_acc_list_list[epoch] = item_acc_list
 
     # acc_loss_draw(epochs, [train_acc_list, train_loss_list, test_acc_list], names,
@@ -106,14 +120,16 @@ def joint_train(net, dst, baseline: str, cfg: Config, epochs=20):
     test_acc_list.clear()
 
 
-def joint_validation(net, dst, cfg: Config):
+def joint_validation(net, dst, cfg: Config, logger):
     batches = len(dst.test_data)
     correct = 0
+
+    logger.info("start testing")
 
     item_correct_list = list(0 for i in cfg.item)
     item_acc_list = list()
     for batch in range(batches):
-        test_data, test_labels = dst.load_data(train=False)
+        test_data, test_labels, name, c_index = dst.load_data(train=False)
         test_data = torch.tensor(test_data, dtype=torch.float32)
         test_data = test_data.to(device, dtype=dtype)
         for i in range(len(test_labels)):
@@ -127,9 +143,14 @@ def joint_validation(net, dst, cfg: Config):
         count = 0
 
         for i in range(len(test_labels)):
-            if torch.argmax(output[i]) == test_labels[i]:
+            expected = test_labels[i].cpu().item()
+            predicted = torch.argmax(output[i]).cpu().item()
+            if expected == predicted:
                 item_correct_list[i] += 1
                 count += 1
+            else:
+                logger.info("Patient {}, cycle index {}, item {}, Expected label is {}, but predict {}".
+                            format(name, c_index, cfg.label_dict["item" + str(i + 1)], expected, predicted))
 
         if count == len(test_labels):
             correct += 1
@@ -154,12 +175,17 @@ def train(net, dst, baseline: str, epochs=20):
     criterion = nn.CrossEntropyLoss()
     batches = len(dst.train_data)
 
+    logger = get_logger(
+        filename="./loggings/exp1.log",
+        verbosity=1
+    )
+
     for epoch in range(epochs):
         nloss = 0
         correct = 0
         dst.shuffle()
         for batch in range(batches):
-            train_data, train_label = dst.load_data()
+            train_data, train_label, _, _ = dst.load_data()
             train_data = torch.tensor(train_data, dtype=torch.float32)
             train_label = torch.tensor(train_label)
             train_data = train_data.to(device, dtype=dtype)
@@ -181,7 +207,8 @@ def train(net, dst, baseline: str, epochs=20):
         train_loss_list.append(nloss / batches)
         train_acc_list.append(correct / batches)
 
-        print("Epoch {}/{}:, average loss is {}".format(epoch, epochs, nloss / batches))
+        logger.info("Epoch {}/{}:, average loss is {}".format(epoch, epochs, nloss / batches))
+
         validation(net, dst)
 
     acc_loss_draw(epochs, [train_acc_list, train_loss_list, test_acc_list], names,
@@ -203,7 +230,7 @@ def validation(net, dst):
     batches = len(dst.test_data)
     correct = 0
     for batch in range(batches):
-        test_data, test_label = dst.load_data(train=False)
+        test_data, test_label, _, _ = dst.load_data(train=False)
         test_data = torch.tensor(test_data, dtype=torch.float32)
         test_label = torch.tensor(test_label)
         test_data = test_data.to(device, dtype=dtype)
