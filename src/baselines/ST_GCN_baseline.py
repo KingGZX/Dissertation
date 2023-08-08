@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from graph import Graph
+from utils.graph_attention_block import GAT_Block
 
 
 class TemporalUnit(nn.Module):
@@ -137,6 +138,22 @@ class ST_GCN(nn.Module):
             ST_GCN_Block(t_kernel, 1, 2, 128, 256),
             ST_GCN_Block(t_kernel, 1, 1, 256, 256),
             ST_GCN_Block(t_kernel, 1, 1, 256, 256),
+
+
+            # ST GCN Attention Model
+            # for ST-GCN Small Model, replace the below Attention block with the original ST GCN Block
+            # ST_GCN_Block(t_kernel, 1, 1, in_channels, 64, residual=False),
+            # GAT_Block(in_channels=64, hidden_dim=64),
+            # ST_GCN_Block(t_kernel, 1, 2, 64, 128),
+            # GAT_Block(in_channels=128, hidden_dim=128),
+            # ST_GCN_Block(t_kernel, 1, 2, 128, 256),
+            # ST_GCN_Block(t_kernel, 1, 1, 256, 256),
+
+
+            # ST GCN Tiny
+            # ST_GCN_Block(t_kernel, 1, 1, in_channels, 64, residual=False),
+            # ST_GCN_Block(t_kernel, 1, 2, 64, 128),
+            # ST_GCN_Block(t_kernel, 1, 2, 128, 256),
         ))
 
         if edge_importance_weighting:
