@@ -5,11 +5,28 @@ class Config:
     train_rate = 0.7
 
     # take "Center of Mass" as additional joint
-    # so when this's True, please append this joint to the nodes
-    use_CoM = True
+    # so when this is True, please append this joint to the nodes
+    use_CoM = False
+
+    use_Joint_Angles = True
 
     # note: the Excel dataset follows this order
-    nodes = ["Pelvis", "Neck", "Head", "Right Shoulder", "Right Upper Arm",
+    # nodes = ["Pelvis", "Neck", "Head", "Right Shoulder", "Right Upper Arm",
+    #          "Right Forearm", "Right Hand", "Left Shoulder", "Left Upper Arm",
+    #          "Left Forearm", "Left Hand", "Right Upper Leg", "Right Lower Leg",
+    #          "Right Foot", "Right Toe", "Left Upper Leg", "Left Lower Leg",
+    #          "Left Foot", "Left Toe"]
+
+    # including center of mass
+    # nodes = ["Pelvis", "Neck", "Head", "Right Shoulder", "Right Upper Arm",
+    #          "Right Forearm", "Right Hand", "Left Shoulder", "Left Upper Arm",
+    #          "Left Forearm", "Left Hand", "Right Upper Leg", "Right Lower Leg",
+    #          "Right Foot", "Right Toe", "Left Upper Leg", "Left Lower Leg",
+    #          "Left Foot", "Left Toe", "Center of Mass"]
+
+    # including spines
+    nodes = ["Pelvis", "L3 Spine", "T12 Spine", "T8 Spine",
+             "Neck", "Head", "Right Shoulder", "Right Upper Arm",
              "Right Forearm", "Right Hand", "Left Shoulder", "Left Upper Arm",
              "Left Forearm", "Left Hand", "Right Upper Leg", "Right Lower Leg",
              "Right Foot", "Right Toe", "Left Upper Leg", "Left Lower Leg",
@@ -43,9 +60,10 @@ class Config:
     # by default, we only use position information as features,
     # so the input features should be in shape [3, frames, joints = (nodes num)]
     # with one additional sheet used, there'll be 3 more channels.
-    segment_sheet_idx = [1]
+    segment_sheet_idx = [1, 2, 3]
 
-    spine_segment = ["L5", "L3", "T12", "T8"]
+    # spine_segment = ["L5", "L3", "T12", "T8"]
+    spine_segment = ["L5"]
 
     # since the spine segments are estimated by IMU, I firstly decide not to use it
     ignore_spine = True
@@ -59,4 +77,4 @@ class Config:
     batch_size = 4
 
     # test which item
-    item = 3
+    item = [13]
