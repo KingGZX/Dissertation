@@ -1,5 +1,5 @@
 import numpy as np
-from loadata import Config
+from utils.loadata import Config
 
 
 class Graph:
@@ -20,12 +20,32 @@ class Graph:
     def get_edges(self):
         self.num_node = len(Config.nodes)
         self_link = [(i, i) for i in range(self.num_node)]
+
         # pelvis -> neck, upper leg   neck -> head, shoulder
         neighbor_link = [(0, 1), (0, 11), (0, 15), (1, 2), (1, 3), (1, 7),
                          # shoulder -> upper arm  upper arm ->forearm
                          (3, 4), (4, 5), (5, 6), (7, 8), (8, 9), (9, 10),
-                         # upper leg -> lower leg   lower leg -> foot   foot -> toe
+                         # upper leg -> lower leg, lower leg -> foot,  foot -> toe
                          (11, 12), (12, 13), (13, 14), (15, 16), (16, 17), (17, 18)]
+
+        # with "CoM"
+        # neighbor_link = [(0, 1), (0, 11), (0, 15), (1, 2), (1, 3), (1, 7),
+        #                  # shoulder -> upper arm  upper arm ->forearm
+        #                  (3, 4), (4, 5), (5, 6), (7, 8), (8, 9), (9, 10),
+        #                  # upper leg -> lower leg, lower leg -> foot,  foot -> toe
+        #                  (11, 12), (12, 13), (13, 14), (15, 16), (16, 17), (17, 18),
+        #                  # pelvis -> Center of Mass         neck -> Center of Mass
+        #                  (0, 19), (1, 19)]
+
+        # with spine
+        # neighbor_link = [(0, 4), (0, 14), (0, 18), (4, 5), (4, 6), (4, 10),
+        #                  # shoulder -> upper arm  upper arm ->forearm
+        #                  (6, 7), (7, 8), (8, 9), (10, 11), (11, 12), (12, 13),
+        #                  # upper leg -> lower leg, lower leg -> foot,  foot -> toe
+        #                  (14, 15), (15, 16), (16, 17), (18, 19), (19, 20), (20, 21),
+        #                  # spines
+        #                  (0, 1), (1, 2), (2, 3)]
+
         self.edge = self_link + neighbor_link
         self.center = 0  # use pelvis as the center of body
 
