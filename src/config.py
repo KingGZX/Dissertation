@@ -71,3 +71,6 @@ class Config:
 
     # test which item
     item = [13]
+
+    # input channel
+    in_channels = len(segment_sheet_idx) * 3
