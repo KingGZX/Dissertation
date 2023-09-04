@@ -4,6 +4,8 @@ import os
 import progressbar
 from config import Config
 from random import shuffle
+import math
+from utils.padding import padding
 
 
 # Version 1: only extract position as features
@@ -55,7 +57,8 @@ class Person:
 
         rowId = int(self.name[1:])  # filter 'S'
         labels = self.cfg.labels.loc[rowId - 1][2:]  # filter timestamp and name
-        universe_labels = [int(labels[t][-1]) for t in range(len(labels))]
+        # start from 0
+        universe_labels = [int(labels[t][-1]) - 1 for t in range(len(labels))]
 
         if self.cfg.use_CoM:
             try:
@@ -83,15 +86,21 @@ class Person:
                 for sheet in self.sheet:
                     # these are all segment relevant features, positions、velocity、acceleration and so on
                     # the joints are the same, so we're just enlarging the channels
-                    x_sheet_features = sheet.to_numpy()  # in shape [frames, joints * 3(3D coords)]
+                    x_sheet_features = sheet.to_numpy()  # in shape [frames, joints * 3(3D space)]
                     x_sheet_features = x_sheet_features[interval_start:interval_end]
                     # print(pos_featuers.shape)
                     x_sheet_features = np.reshape(x_sheet_features, (x_sheet_features.shape[0], -1, 3))
+                    x_sheet_features = np.transpose(x_sheet_features, (2, 0, 1))  # [channel, frames, joints]
+                    features = x_sheet_features if features is None else \
+                        np.concatenate([features, x_sheet_features], axis=0)    # along channels dimension
+
+                    """"
                     if features is None:
                         features = np.transpose(x_sheet_features, (2, 0, 1))  # [channel, frames, joints]
                     else:
                         x_sheet_features = np.transpose(x_sheet_features, (2, 0, 1))
                         features = np.concatenate([features, x_sheet_features], axis=0)
+                    """
 
                 if self.use_CoM:
                     com_features = self.mass_center_features[interval_start:interval_end]
@@ -115,12 +124,14 @@ class Person:
 
 
 class Dataset:
-    def __init__(self, cfg: Config, dataset_path="./dataset/data"):
+    def __init__(self, cfg: Config, dataset_path="./dataset/data", padding=True):
         """
         :param cfg:
             a Config object
         :param dataset_path:
             dataset path
+        :param padding:
+            whether pad the gait cycles to perform batch training
 
         what we are going to do here is to find the maximum time frames of the dataset,
         then do interpolation to achieve batch training.  (firstly simply use linear xx)
@@ -129,6 +140,7 @@ class Dataset:
         """
         self.train_ptr = 0
         self.test_ptr = 0
+        self.batch_index = 0
         # since the frames spent on each gait cycle is different between different people
         # the following frames variable is recorded for statistics and padding
         self.maxFrame = 0
@@ -162,7 +174,7 @@ class Dataset:
             path = os.path.join(self.dspath, category)
             total_files = os.listdir(path)
             total_len = len(total_files)
-            train_num = int(total_len * self.cfg.train_rate)
+            train_num = math.floor(total_len * self.cfg.train_rate)
             train_set = np.random.choice(total_len, train_num, replace=False)
             print("Start loading {} files:".format(category))
             p = progressbar.ProgressBar()
@@ -187,6 +199,19 @@ class Dataset:
         print("Average Frame of one gait cycle is {}".format(self.total_frames / actual_num))  # 115
 
         # self.zero_padding()
+        if padding:
+            self.pad()
+        # add the "batch" dimension to fit the model requirement
+        self.extend()
+
+    def extend(self):
+        for i in range(len(self.train_data)):
+            self.train_data[i] = self.train_data[i][None, :, :, :]
+
+        # refer to majority vote , so it would be clear that test_data is actually a list of lists
+        for i in range(len(self.test_data)):
+            for j in range(len(self.test_data[i])):
+                self.test_data[i][j] = self.test_data[i][j][None, :, :, :]
 
     def load_person(self, fp, train=True):
         p = Person(fp, self.cfg)
@@ -204,12 +229,23 @@ class Dataset:
                 self.train_name.append(p.name)
                 self.train_cycle_index.append(i + 1)
         else:
-            for features, labels in zip(p.features, p.labels):
-                self.test_data.append(features)
-                self.test_label.append(labels)
-            for i in range(cycles):
-                self.test_name.append(p.name)
-                self.test_cycle_index.append(i + 1)
+            self.test_data.append(p.features)
+            # since all the gait cycles are coming from the same person, share the same label
+            self.test_label.append(p.labels[0])
+            self.test_name.append(p.name)
+
+            # cycle index, in this case, I predict the label of each gait cycle of the same person
+            # However, now I want to use vote method to determine the final result
+            # self.test_cycle_index.append(i + 1)
+
+    def pad(self):
+        for i in range(len(self.train_data)):
+            self.train_data[i] = padding(self.train_data[i], avg=self.cfg.avg_frames)
+
+        # refer to majority vote , so it would be clear that test_data is actually a list of lists
+        for i in range(len(self.test_data)):
+            for j in range(len(self.test_data[i])):
+                self.test_data[i][j] = padding(self.test_data[i][j], avg=self.cfg.avg_frames)
 
     def zero_padding(self):
         """
@@ -228,22 +264,35 @@ class Dataset:
                 zeros_pad = np.zeros((channel, self.maxFrame - frames, joints))
                 self.test_data[j] = np.concatenate([self.test_data[j], zeros_pad], axis=1)
 
-    def load_batch_data(self, train=True):
-        data = None
-        label = None
-        item = self.cfg.item
-        if train:
-            if (self.train_ptr + 1) < self.train_batches:
-                pass
-        pass
+    def load_batch_data_train(self):
+        bat_label = list()
+        bat_data = list()
+        train_len = len(self.train_data)
+
+        # single item test first, to see whether this padding and interpolation method is valid
+        items = self.cfg.item
+        next_bc = min((self.batch_index + 1) * self.cfg.batch_size, train_len)
+        for item in items:
+            item_label = list()
+            item_index = item - 1
+            for labels in self.train_label[self.batch_index * self.cfg.batch_size:next_bc]:
+                item_label.append(labels[item_index])
+            bat_label.append(item_label)
+
+        bat_data = np.asarray(self.train_data[self.batch_index * self.cfg.batch_size:next_bc], dtype=np.float32)
+        bat_data = bat_data.squeeze(axis=1)
+        # bat_label = np.asarray(bat_label)
+
+        self.batch_index = self.batch_index + 1 if next_bc < train_len else 0
+
+        return bat_data, bat_label
 
     def load_data(self, train=True):
         """
-        one gait cycle once
+        one gait cycle once time call this function.
 
-        "item is in the config file , means which item in the Wisconsin Gait Scale we want to predict"
-
-        since initially it's just a one-head model which can only output one label at once.
+        Notably, when loading test data, it returns a list of gait cycles from the same person.
+        then, we use majority vote method to determine the final result
         """
         data = None
         label = list()
@@ -258,22 +307,21 @@ class Dataset:
             cycle_index = self.train_cycle_index[self.train_ptr]
             data = self.train_data[self.train_ptr]
             for item in items:
-                label.append(self.train_label[self.train_ptr][item - 1] - 1)
+                # start from 0
+                item_index = item - 1
+                label.append(self.train_label[self.train_ptr][item_index])
             self.train_ptr += 1
-            if self.train_ptr == len(self.train_data):
-                self.train_ptr = 0
+            self.train_ptr = 0 if self.train_ptr == len(self.train_data) else self.train_ptr
+
         else:
             patient_name = self.test_name[self.test_ptr]
-            cycle_index = self.test_cycle_index[self.test_ptr]
-            data = self.test_data[self.test_ptr]
+            data = self.test_data[self.test_ptr]       # Still a list, consisted of several gait cycles from same person
             for item in items:
-                label.append(self.test_label[self.test_ptr][item - 1] - 1)
+                # start from 0
+                item_index = item - 1
+                label.append(self.test_label[self.test_ptr][item_index])
             self.test_ptr += 1
-            if self.test_ptr == len(self.test_data):
-                self.test_ptr = 0
-
-        if len(label) == 1:
-            label = label[0]
+            self.test_ptr = 0 if self.test_ptr == len(self.test_data) else self.test_ptr
 
         return data, label, patient_name, cycle_index
 
