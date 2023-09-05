@@ -96,7 +96,7 @@ def padding(data, avg=120):
     if frames < avg:
         ratio = avg / frames
         x = np.arange(1, channels * joints + 1)
-        y = np.arange(1, frames + 1, dtype=np.float)
+        y = np.arange(1, frames + 1, dtype=np.float64)
         y *= ratio
         z = data
         f = interpolate.interp2d(x, y, z, kind="linear")
