@@ -15,7 +15,7 @@ class TemporalUnit(nn.Module):
             out_channels=in_channel,
             kernel_size=(t_kernel, 1),
             stride=(stride, 1),
-            padding=(t_kernel//2, 0)    # pad the time domain
+            padding=(t_kernel // 2, 0)  # pad the time domain
         )
         self.bn2 = nn.BatchNorm2d(in_channel)
         self.dropout = nn.Dropout(0.5, inplace=True)
@@ -54,6 +54,7 @@ class GCNUnit(nn.Module):
             kernel_size=(1, 1),
             stride=1
         )
+        self.dropout = nn.Dropout(0.5, inplace=True)
 
     def forward(self, x, adjacent):
         """
@@ -63,7 +64,7 @@ class GCNUnit(nn.Module):
                 adjacent matrices
         :return:
         """
-        x1 = self.conv(x)
+        x1 = self.dropout(self.conv(x))
         b, c, w, h = x1.shape
         x1 = x1.view(b, self.kernel_size, c // self.kernel_size, w, h)
 
@@ -98,7 +99,7 @@ class ST_GCN_Block(nn.Module):
                     in_channel,
                     out_channel,
                     1,
-                    (stride, 1),            # (frames - 1) / stride + 1
+                    (stride, 1),  # (frames - 1) / stride + 1
                 ),
                 nn.BatchNorm2d(out_channel)
             )
@@ -128,17 +129,16 @@ class ST_GCN(nn.Module):
         self.data_bn = nn.BatchNorm1d(in_channels * adjacency.shape[1])
         self.st_gcn = nn.ModuleList((
             # spatial_kernel_size = 1 means we only have one adjacency matrix
-            ST_GCN_Block(t_kernel, 1, 1, in_channels, 64, residual=False),
-            ST_GCN_Block(t_kernel, 1, 1, 64, 64),
-            ST_GCN_Block(t_kernel, 1, 1, 64, 64),
-            ST_GCN_Block(t_kernel, 1, 1, 64, 64),
-            ST_GCN_Block(t_kernel, 1, 2, 64, 128),
-            ST_GCN_Block(t_kernel, 1, 1, 128, 128),
-            ST_GCN_Block(t_kernel, 1, 1, 128, 128),
-            ST_GCN_Block(t_kernel, 1, 2, 128, 256),
-            ST_GCN_Block(t_kernel, 1, 1, 256, 256),
-            ST_GCN_Block(t_kernel, 1, 1, 256, 256),
-
+            # ST_GCN_Block(t_kernel, 1, 1, in_channels, 64, residual=False),
+            # ST_GCN_Block(t_kernel, 1, 1, 64, 64),
+            # ST_GCN_Block(t_kernel, 1, 1, 64, 64),
+            # ST_GCN_Block(t_kernel, 1, 1, 64, 64),
+            # ST_GCN_Block(t_kernel, 1, 2, 64, 128),
+            # ST_GCN_Block(t_kernel, 1, 1, 128, 128),
+            # ST_GCN_Block(t_kernel, 1, 1, 128, 128),
+            # ST_GCN_Block(t_kernel, 1, 2, 128, 256),
+            # ST_GCN_Block(t_kernel, 1, 1, 256, 256),
+            # ST_GCN_Block(t_kernel, 1, 1, 256, 256),
 
             # ST GCN Attention Model
             # for ST-GCN Small Model, replace the below Attention block with the original ST GCN Block
@@ -149,11 +149,11 @@ class ST_GCN(nn.Module):
             # ST_GCN_Block(t_kernel, 1, 2, 128, 256),
             # ST_GCN_Block(t_kernel, 1, 1, 256, 256),
 
-
             # ST GCN Tiny
-            # ST_GCN_Block(t_kernel, 1, 1, in_channels, 64, residual=False),
-            # ST_GCN_Block(t_kernel, 1, 2, 64, 128),
-            # ST_GCN_Block(t_kernel, 1, 2, 128, 256),
+            ST_GCN_Block(t_kernel, 1, 1, in_channels, 32, residual=False),
+            GAT_Block(in_channels=32, hidden_dim=32),
+            ST_GCN_Block(t_kernel, 1, 2, 32, 64),
+            ST_GCN_Block(t_kernel, 1, 1, 64, 64),
         ))
 
         if edge_importance_weighting:
@@ -162,7 +162,14 @@ class ST_GCN(nn.Module):
                 for i in self.st_gcn
             ])
 
-        self.fcn = nn.Conv2d(256, num_class, 1)
+        # self.fcn = nn.Conv2d(256, num_class, 1)
+
+        ## LSTM Classification Head
+        self.rnn = nn.LSTM(batch_first=True,
+                           num_layers=1,
+                           hidden_size=256,
+                           input_size=22 * 64)  # joints_num * channels
+        self.fc = nn.Linear(256, num_class)
 
     def forward(self, x):
         batch, channel, frames, joints = x.shape
@@ -176,13 +183,22 @@ class ST_GCN(nn.Module):
         for gcn, importance in zip(self.st_gcn, self.edge_importance):
             x = gcn(x, self.adjacency * importance)
 
+        """
         # global pooling
         # average each feature map as the feature.   will be in shape (batch, channel, 1, 1)
         x = F.avg_pool2d(x, x.size()[2:])
 
         x = self.fcn(x)
         out = x.squeeze()
-        return out
+        """
+
+        ## LSTM Classification Head
+        x = x.permute(0, 2, 3, 1).flatten(2)
+        out, _ = self.rnn(x)
+        x = out[:, -1, :]               # take the output of the last time step
+        out = self.fc(x)
+
+        return [out]
 
 # code for debugging
 # x = torch.randn(3, 3, 390, 19)

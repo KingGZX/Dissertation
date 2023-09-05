@@ -91,6 +91,7 @@ class CBlock(nn.Module):
         x = x + self.mlp(self.norm2(x))
         return x
 
+
 class MLP(nn.Module):
     def __init__(self, in_channels, hidden=None, out_channels=None):
         super(MLP, self).__init__()
@@ -194,7 +195,9 @@ class Uniformer(nn.Module):
         x = self.sa(x)
 
         x = F.avg_pool2d(x, x.size()[2:]).squeeze()
+        if len(x.shape) == 1:   # test instances are fed to the model one by one, so the squeeze above generate errors
+            x = torch.unsqueeze(x, dim=0)
 
-        x = self.classify_head(x)
+        out = self.classify_head(x)
 
-        return x
+        return [out]
