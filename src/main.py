@@ -1,16 +1,17 @@
+import torch
+
 from loadata import Dataset
-from train import train
-from baselines.st_gcn_baseline import ST_GCN
-from baselines.TCN_baseline import TCN
+from train import *
+from baselines.ST_GCN_baseline import ST_GCN
+from baselines.Uniformer_baseline import Uniformer
 from config import Config
 
 if __name__ == "__main__":
     cfg = Config()
+    # person = Person(filepath="dataset/data/patient/S37 陳永棠 (L)-002.xlsx", cfg=cfg)
 
-    dataset = Dataset(cfg)
+    dataset = Dataset(cfg, dataset_path="./test_dst/data")
 
-    # model = TCN(t_kernel=9, time_steps=dataset.maxFrame, num_classes=3)
+    model = Uniformer(in_channels=cfg.in_channels)
 
-    # model = ST_GCN(3, 3)
-
-    # train(model, dataset, item=cfg.item, epochs=40, baseline="TCN")
+    batch_train(model, dataset, epochs=10, model_name="Uniformer", cfg=cfg)

@@ -53,7 +53,7 @@ class Config:
     # by default, we only use position information as features,
     # so the input features should be in shape [3, frames, joints = (nodes num)]
     # with one additional sheet used, there'll be 3 more channels.
-    segment_sheet_idx = [1, 2, 3]
+    segment_sheet_idx = [1, 2, 3, 4, 5]
 
     # spine_segment = ["L5", "L3", "T12", "T8"]
     spine_segment = ["L5"]
@@ -70,7 +70,10 @@ class Config:
     batch_size = 4
 
     # test which item
-    item = [13]
+    item = [3]
 
     # input channel
     in_channels = len(segment_sheet_idx) * 3
+
+    # avg_frames (padding goal)
+    avg_frames = 120
