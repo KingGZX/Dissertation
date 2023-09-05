@@ -4,243 +4,188 @@ import torch.nn as nn
 from utils.plot import *
 from loadata import Config
 from utils.log import get_logger
+from loadata import Dataset
+import math
+import numpy as np
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 dtype = torch.float32
 
-train_acc_list = list()
-train_loss_list = list()
-test_acc_list = list()
 
-names = ["train accuracy", "train loss", "test accuracy"]
+def draw(train_acc, test_acc, item_loss, total_loss, model: str, cfg: Config, epochs):
+    # draw train accuracy, test accuracy and loss on the same figure
+    import os
+    if not os.path.exists("./Results"):
+        os.mkdir("./Results")
+    idx = len(os.listdir("./Results")) + 1
+    fp = "./Results/exp" + str(idx)
+    os.mkdir(fp)
+    items = len(cfg.item)
+    items_test_acc_list = list()
+    item_names = list()
+    for item in range(items):
+        item_train, item_test, item_los = list(), list(), list()
+        for epoch in range(epochs):
+            item_train.append(train_acc[epoch][item])
+            item_test.append(test_acc[epoch][item])
+            item_los.append(item_loss[epoch][item])
+        data_list = [item_train, item_test, item_los]
+        legend_name = ["train accuracy", "test accuracy", "loss value"]
+        item_name = cfg.label_dict["item" + str(cfg.item[item])]
+        items_test_acc_list.append(item_test)
+        item_names.append(item_name)
+        title = model + "'s performance on item " + item_name
+        item_acc_loss_draw(epochs, data_list=data_list, legend_name=legend_name,
+                           title_name=title, save_path=fp, item_name="item" + str(cfg.item[item]))
+
+    # draw a single picture of total loss trend
+    if items > 1:
+        total_loss_draw(epochs, loss_list=total_loss, legend_name="total loss",
+                        title_name="total loss of model " + model, save_path=fp, name="total_loss")
+
+    # make comparison of different items
+    if items > 1:
+        compare_item_acc_draw(epochs, items_test_acc_list, item_names, "test accuracy of each item", fp, "compare")
 
 
-def joint_train(net, dst, baseline: str, cfg: Config, epochs=20):
-    net.to(device)
-    optimizer = optim.Adam(net.parameters())
+def batch_train(model, dataset: Dataset, epochs: int, model_name: str, cfg: Config, log=False, log_file=None):
+    """
+    :param model:        Network Instance
+    :param dataset:      The class implemented in loadata.py
+    :param epochs:       Hyperparameter
+    :param model_name:   e.g. ST-GCN, Uniformer, GFN, for plotting result
+    :param cfg:          config file
+    :param log_file:     Logging file name
+    :param log:          Logging setting
+    :return:
+    """
+    # Hyperparameter setting
+    optimizer = optim.Adam(model.parameters())
     criterion = nn.CrossEntropyLoss()
-    batches = len(dst.train_data)
 
-    logger = get_logger(
-        filename="./loggings/exp.log",
-        verbosity=1
-    )
+    batch_size = cfg.batch_size
+    train_len = len(dataset.train_data)
+    batches = math.ceil(train_len / batch_size)
 
-    item_train_acc_list_list = list([] for i in range(epochs))
-    item_test_acc_list_list = list([] for i in range(epochs))
+    # move the model to GPU
+    model.to(device)
 
+    # create log file handler
+    if log:
+        import os
+        if not os.path.exists("./log"):
+            os.mkdir("./log")
+        idx = len(os.listdir("./log")) + 1
+        fp = "exp" + str(idx) + ".log" if log_file is None else log_file
+        logger = get_logger(
+            filename="./log/" + fp,
+            verbosity=1
+        )
+
+    item_loss_list, item_acc_train_list, total_loss_list, item_acc_test_list = list(), list(), list(), list()
     for epoch in range(epochs):
-
-        logger.info("training epoch {}".format(epoch + 1))
-
-        item_correct_list = list(0 for i in cfg.item)
-        nloss = 0
-        correct = 0
-        dst.shuffle()
+        # shuffle gait cycles in the train set
+        dataset.shuffle()
+        item_acc = np.zeros(len(cfg.item))
+        item_loss = np.zeros(len(cfg.item))
+        total_loss = 0
         for batch in range(batches):
-            train_data, train_labels, _, _ = dst.load_data()
-            train_data = torch.tensor(train_data, dtype=torch.float32)
-            for i in range(len(train_labels)):
-                train_labels[i] = torch.tensor(train_labels[i])
-                train_labels[i] = train_labels[i].to(device)
-            train_data = train_data.to(device, dtype=dtype)
+            train_data, train_label = dataset.load_batch_data_train()
+            # to tensor
+            train_data = torch.tensor(train_data, dtype=torch.float32).to(device, dtype=dtype)
+            for i in range(len(cfg.item)):
+                # each element of train_label is a list, it's corresponding labels of this batch data of item[i]
+                train_label[i] = torch.tensor(train_label[i], dtype=torch.long).to(device)
 
-            if len(train_data.size()) == 3:
-                train_data = train_data.unsqueeze(0)
+            out = model(train_data)
+            loss = torch.tensor(0).to(device, dtype=dtype)
+            for i in range(len(cfg.item)):
+                i_loss = criterion(out[i], train_label[i])
+                loss += i_loss
+                correct_num = torch.sum(torch.argmax(out[i], dim=1) == train_label[i]).cpu()
+                item_acc[i] += correct_num
+                item_loss[i] += i_loss.item()
 
-            output = net(train_data)
+            total_loss += loss.item()
 
-            loss = torch.tensor(0)
-            loss = loss.to(device, dtype=dtype)
-
-            # L1 Regularization
-            # lamda = 0.0002
-            # for param in net.parameters():
-            #     loss += torch.norm(param, 1) * lamda
-
-            for i in range(len(train_labels)):
-                item_loss = criterion(output[i], train_labels[i])
-                loss += item_loss
-                nloss += item_loss.item()
-
-                """
-                loss1 = criterion(output[0], train_labels[0])
-                loss2 = criterion(output[1], train_labels[1])
-                loss3 = criterion(output[2], train_labels[2])
-                loss4 = criterion(output[3], train_labels[3])
-                loss5 = criterion(output[4], train_labels[4])
-                """
-
-            # nloss += (loss1.item() + loss2.item() + loss3.item() + loss4.item() + loss5.item())
-
-            # loss = loss1 + loss2 + loss3 + loss4 + loss5
-
-            count = 0
-
-            # if all the items are classified correctly, then "correct + 1"
-            for i in range(len(train_labels)):
-                if torch.argmax(output[i]) == train_labels[i]:
-                    item_correct_list[i] += 1
-                    count += 1
-
-            if count == len(train_labels):
-                correct += 1
-
+            # backward propagation
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
-        train_loss_list.append(nloss / batches)
-        train_acc_list.append(correct / batches)
-        # accuracy of each item
-        for item_correct in item_correct_list:
-            item_train_acc_list_list[epoch].append(item_correct / batches)
+        item_acc = item_acc / train_len
+        item_loss = item_loss / batches
+        total_loss = total_loss / batches
+        item_acc_train_list.append(item_acc), item_loss_list.append(item_loss), total_loss_list.append(total_loss)
+        item_acc_test = validation(model, dataset, cfg)
+        item_acc_test_list.append(item_acc_test)
+        print("Epoch:{}/{}, average loss is {}".format(epoch, epochs, total_loss))
+        for i in range(len(cfg.item)):
+            print("Epoch:{}/{}, accuracy of item {} is {}".format(epoch, epochs, cfg.item[i], item_acc_test[i]))
 
-        logger.info("Epoch {}/{}:, average loss is {}".format(epoch + 1, epochs, nloss / batches))
-        print("Epoch {}/{}:, average accuracy is {}".format(epoch + 1, epochs, correct / batches))
-
-        # for i in range(len(cfg.item)):
-        # print("Epoch {}/{}:, average accuracy of item {} is {}".format(epoch + 1, epochs,
-        # cfg.label_dict["item" + str(cfg.item[i])]
-        # , item_train_acc_list_list[epoch][i]))
-
-        item_acc_list = joint_validation(net, dst, cfg, logger)
-        item_test_acc_list_list[epoch] = item_acc_list
-
-    # acc_loss_draw(epochs, [train_acc_list, train_loss_list, test_acc_list], names,
-    # titlename=baseline)
-
-    acc_loss_draw(epochs, [train_acc_list, train_loss_list, test_acc_list], names, title_name=baseline)
-    items_acc_acc_draw(epochs, item_test_acc_list_list, cfg)
-    items_acc_acc_draw(epochs, item_train_acc_list_list, cfg)
-
-    # for Colab
-    train_loss_list.clear()
-    train_acc_list.clear()
-    test_acc_list.clear()
+    draw(item_acc_train_list, item_acc_test_list, item_loss_list, total_loss_list, model_name, cfg, epochs)
 
 
-def joint_validation(net, dst, cfg: Config, logger):
-    batches = len(dst.test_data)
-    correct = 0
-
-    logger.info("start testing")
-
-    item_correct_list = list(0 for i in cfg.item)
-    item_acc_list = list()
-    for batch in range(batches):
-        test_data, test_labels, name, c_index = dst.load_data(train=False)
-        test_data = torch.tensor(test_data, dtype=torch.float32)
-        test_data = test_data.to(device, dtype=dtype)
-        for i in range(len(test_labels)):
-            test_labels[i] = torch.tensor(test_labels[i])
-            test_labels[i] = test_labels[i].to(device)
-        if len(test_data.size()) == 3:
-            test_data = test_data.unsqueeze(0)
-
-        output = net(test_data)
-
-        count = 0
-
-        for i in range(len(test_labels)):
-            expected = test_labels[i].cpu().item()
-            predicted = torch.argmax(output[i]).cpu().item()
-            if expected == predicted:
-                item_correct_list[i] += 1
-                count += 1
-            else:
-                logger.info("Patient {}, cycle index {}, item {}, Expected label is {}, but predict {}".
-                            format(name, c_index, cfg.label_dict["item" + str(i + 1)], expected, predicted))
-
-        if count == len(test_labels):
-            correct += 1
-
-    for item_correct in item_correct_list:
-        item_acc_list.append(item_correct / batches)
-
-    test_acc_list.append(correct / batches)
-    return item_acc_list
-
-
-def train(net, dst, baseline: str, epochs=20):
+def vote(scores: list):
     """
-    :param baseline:   baseline name, e.g. TCN, ST-GCN .......    use it as the title of the figure
-    :param net:     ST-GCN Network
-    :param dst:     Dataset Class
-    :param epochs:  Hyperparameter
+    :param scores:      prediction of each gait cycle of the same person
+    :return:
+            choose the majority as the label
+            if there is not only 1 mode, then use average as the final score.
+    """
+    new_scores = list()
+    sub_cycles = len(scores)  # number of gait cycles
+    items = len(scores[0])  # number of items
+    for i in range(items):
+        item_i_prediction = list()
+        for j in range(sub_cycles):
+            item_i_prediction.append(scores[j][i])
+        # find the mode
+        d = dict()
+        for pred in item_i_prediction:
+            d[pred] = d[pred] + 1 if pred in d else 1
+        i_max = 0
+        prediction = list()
+        for key in d:
+            # d[key] is the occurrence of score "key"
+            if d[key] > i_max:
+                i_max = d[key]
+                prediction.clear()
+                prediction.append(key)
+            elif d[key] == i_max:
+                prediction.append(key)
+        new_scores.append(round(sum(prediction) / len(prediction)))
+
+    return new_scores
+
+
+def validation(model, dataset: Dataset, cfg: Config):
+    """
+    :param model:     same as the train function above
+    :param dataset:
+    :param cfg:
     :return:
     """
-    net.to(device)
-    optimizer = optim.Adam(net.parameters())
-    criterion = nn.CrossEntropyLoss()
-    batches = len(dst.train_data)
-
-    logger = get_logger(
-        filename="./loggings/exp1.log",
-        verbosity=1
-    )
-
-    for epoch in range(epochs):
-        nloss = 0
-        correct = 0
-        dst.shuffle()
+    with torch.no_grad():
+        batches = len(dataset.test_data)
+        item_acc_list = np.zeros(len(cfg.item))
         for batch in range(batches):
-            train_data, train_label, _, _ = dst.load_data()
-            train_data = torch.tensor(train_data, dtype=torch.float32)
-            train_label = torch.tensor(train_label)
-            train_data = train_data.to(device, dtype=dtype)
-            train_label = train_label.to(device)
-            if len(train_data.size()) == 3:
-                train_data = train_data.unsqueeze(0)
+            test_data, test_labels, name, _ = dataset.load_data(train=False)
+            # Note that, test data is a list of numpy arrays. We use majority vote to determine the final result
+            predicted = list()
+            for sub_cycle in test_data:
+                sub_cycle = torch.tensor(sub_cycle, dtype=torch.float32).to(device, dtype=dtype)
+                sub_out = model(sub_cycle)
+                sub_predicted = list()
+                for i in range(len(cfg.item)):
+                    predict_i = torch.argmax(sub_out[i], dim=1).cpu().item()
+                    sub_predicted.append(predict_i)
+                predicted.append(sub_predicted)
 
-            output = net(train_data)
+            predicted = vote(predicted)
+            for i in range(len(cfg.item)):
+                if predicted[i] == test_labels[i]:
+                    item_acc_list[i] += 1
 
-            correct += (torch.argmax(output) == train_label).cpu()  # avoid 'cuda' error
-
-            loss = criterion(output, train_label)
-            nloss += loss.item()
-
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-        train_loss_list.append(nloss / batches)
-        train_acc_list.append(correct / batches)
-
-        logger.info("Epoch {}/{}:, average loss is {}".format(epoch, epochs, nloss / batches))
-
-        validation(net, dst)
-
-    acc_loss_draw(epochs, [train_acc_list, train_loss_list, test_acc_list], names,
-                  title_name=baseline)
-
-    # for Colab
-    train_loss_list.clear()
-    train_acc_list.clear()
-    test_acc_list.clear()
-
-
-def validation(net, dst):
-    """
-    :param net:
-    :param dst:
-    :return:
-        perform network validation
-    """
-    batches = len(dst.test_data)
-    correct = 0
-    for batch in range(batches):
-        test_data, test_label, _, _ = dst.load_data(train=False)
-        test_data = torch.tensor(test_data, dtype=torch.float32)
-        test_label = torch.tensor(test_label)
-        test_data = test_data.to(device, dtype=dtype)
-        test_label = test_label.to(device)
-        if len(test_data.size()) == 3:
-            test_data = test_data.unsqueeze(0)
-
-        output = net(test_data)
-        correct += (torch.argmax(output) == test_label).cpu()  # avoid 'cuda' error
-
-    acc = correct / batches
-    test_acc_list.append(acc)
-    print("Correct: {}/{}, Accuracy is {}".format(correct, batches, acc))
+        item_acc_list /= batches
+        return item_acc_list
