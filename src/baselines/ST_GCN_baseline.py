@@ -113,12 +113,66 @@ class ST_GCN_Block(nn.Module):
         return out
 
 
-class ST_GCN(nn.Module):
-    def __init__(self, in_channels, num_class, edge_importance_weighting=True, max_hop=1):
+class mlp_head(nn.Module):
+    def __init__(self, in_channels, num_class):
+        super(mlp_head, self).__init__()
+        self.fcn = nn.Conv2d(in_channels=in_channels, out_channels=num_class, kernel_size=1)
+
+    def forward(self, x):
         """
-        stack many st_gcn blocks together
+        :param x:
+                shared features from ST-GCN backbone after global max-pooling, in shape [batch, in_channels, 1, 1]
+        :return:
+        """
+        x = self.fcn(x)
+        out = x.squeeze()
+        # keep "batch = 1" shape
+        if len(out.shape) == 1:
+            out = torch.unsqueeze(out, dim=0)
+
+        return out
+
+
+class lstm_head(nn.Module):
+    def __init__(self, in_channels, num_class, hidden, joints=22):
+        super(lstm_head, self).__init__()
+        # LSTM Classification Head
+        self.rnn = nn.LSTM(batch_first=True,
+                           num_layers=1,
+                           hidden_size=hidden,
+                           input_size=joints * in_channels)  # joints_num * channels
+        self.fc = nn.Linear(hidden, num_class)
+
+    def forward(self, x):
+        """
+        :param x:    same as mlp_head
+        :return:
+        """
+        out, _ = self.rnn(x)
+        x = out[:, -1, :]  # take the output of the last time step
+        out = self.fc(x)
+
+        return out
+
+
+class ST_GCN(nn.Module):
+    def __init__(self, in_channels, num_class: list, joints=22, edge_importance_weighting=True, max_hop=1,
+                 classify_head="lstm", hidden=128):
+        """
+        :param in_channels:
+        :param num_class:
+                            a list of items classes
+        :param joints:
+                            human body joints used
+        :param edge_importance_weighting:
+        :param max_hop:
+        :param classify_head:
+                            if dataset is padded, then rnn-like classification head can be used
+                            otherwise, each gait cycle takes occupied different time
+        :param hidden:      hidden size of rnn cell
         """
         super(ST_GCN, self).__init__()
+        self.head = classify_head
         self.graph = Graph(max_hop)
         # the adjacency matrix does not need to update
         adjacency = torch.tensor(self.graph.adjacency, dtype=torch.float32, requires_grad=False)
@@ -162,14 +216,18 @@ class ST_GCN(nn.Module):
                 for i in self.st_gcn
             ])
 
-        # self.fcn = nn.Conv2d(256, num_class, 1)
+        embed_dim = 64
 
-        ## LSTM Classification Head
-        self.rnn = nn.LSTM(batch_first=True,
-                           num_layers=1,
-                           hidden_size=256,
-                           input_size=22 * 64)  # joints_num * channels
-        self.fc = nn.Linear(256, num_class)
+        if self.head == "lstm":
+            self.classify = nn.ModuleList([
+                lstm_head(in_channels=embed_dim, num_class=i, hidden=128, joints=joints)
+                for i in num_class
+            ])
+        else:
+            self.classify = nn.ModuleList([
+                mlp_head(in_channels=embed_dim, num_class=i)
+                for i in num_class
+            ])
 
     def forward(self, x):
         batch, channel, frames, joints = x.shape
@@ -183,22 +241,20 @@ class ST_GCN(nn.Module):
         for gcn, importance in zip(self.st_gcn, self.edge_importance):
             x = gcn(x, self.adjacency * importance)
 
-        """
-        # global pooling
-        # average each feature map as the feature.   will be in shape (batch, channel, 1, 1)
-        x = F.avg_pool2d(x, x.size()[2:])
+        # LSTM Classification Head
+        if self.head == "lstm":
+            x = x.permute(0, 2, 3, 1).flatten(2)
+        else:
+            # global pooling
+            # average each feature map as the feature.   will be in shape (batch, channel, 1, 1)
+            x = F.avg_pool2d(x, x.size()[2:])
 
-        x = self.fcn(x)
-        out = x.squeeze()
-        """
+        out = list()
+        for classification_head in self.classify:
+            item_out = classification_head(x)
+            out.append(item_out)
 
-        ## LSTM Classification Head
-        x = x.permute(0, 2, 3, 1).flatten(2)
-        out, _ = self.rnn(x)
-        x = out[:, -1, :]               # take the output of the last time step
-        out = self.fc(x)
-
-        return [out]
+        return out
 
 # code for debugging
 # x = torch.randn(3, 3, 390, 19)
