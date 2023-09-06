@@ -73,8 +73,8 @@ class Person:
                 print("{} doesn't have sheet Center of Mass\n".format(self.fp))
 
         for start in range(0, len(cyc_sheet), time_split):
-            if start + time_split < len(cyc_sheet):
-                end = start + time_split
+            if start + 4 < len(cyc_sheet):
+                end = start + 4
                 interval_start = cyc_sheet['Frame'][start]
                 interval_end = cyc_sheet['Frame'][end]
                 self.max_frames = max(interval_end - interval_start, self.max_frames)
@@ -308,8 +308,11 @@ class Dataset:
             data = self.train_data[self.train_ptr]
             for item in items:
                 # start from 0
+                item_label = list()
                 item_index = item - 1
-                label.append(self.train_label[self.train_ptr][item_index])
+                # in this way, we can ensure each label has an extra "batch = 1" dimension, which is more flexible
+                item_label.append(self.train_label[self.train_ptr][item_index])
+                label.append(item_label)
             self.train_ptr += 1
             self.train_ptr = 0 if self.train_ptr == len(self.train_data) else self.train_ptr
 

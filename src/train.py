@@ -90,7 +90,10 @@ def batch_train(model, dataset: Dataset, epochs: int, model_name: str, cfg: Conf
         item_loss = np.zeros(len(cfg.item))
         total_loss = 0
         for batch in range(batches):
-            train_data, train_label = dataset.load_batch_data_train()
+            if batch_size > 1:
+                train_data, train_label = dataset.load_batch_data_train()
+            else:
+                train_data, train_label, patient_name, gait_cycle = dataset.load_data(train=True)
             # to tensor
             train_data = torch.tensor(train_data, dtype=torch.float32).to(device, dtype=dtype)
             for i in range(len(cfg.item)):
