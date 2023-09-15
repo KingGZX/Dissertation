@@ -13,9 +13,12 @@ class Person:
     def __init__(self, filepath, cfg: Config):
         """
         :param filepath:
-                 fp , e.g., "dataset/data/xxxxx.xlsx"
+                fp , e.g., "dataset/data/xxxxx.xlsx"
+        :param cfg:
+                config file, useful in reading labels and split gait cycles ....
         """
-        self.use_CoM = False
+        self.use_CoM = cfg.use_CoM
+        self.padding = cfg.padding
         self.mass_center_features = None
         self.max_frames = 0
         self.min_frames = 10000
@@ -119,6 +122,23 @@ class Person:
                     # take "Center of Mass" as a new joint
                     features = np.concatenate([features, com_features], axis=-1)
 
+                # padding the data
+                features = padding(data=features, avg=self.cfg.avg_frames) if self.padding else features
+
+                cycles = len(self.features)
+                # if more data is needed, use while loop to iteratively append different average features
+                # if cycles >= 4 and self.padding:
+                #     avg_gait_features = (features + self.features[cycles - 4]) / 2
+                #     self.features.append(avg_gait_features)
+                #     self.labels.append(universe_labels)
+
+                if self.padding:
+                    while cycles >= 4:
+                        avg_gait_features = (features + self.features[cycles - 4]) / 2
+                        self.features.append(avg_gait_features)
+                        self.labels.append(universe_labels)
+                        cycles -= 4
+
                 self.features.append(features)
                 self.labels.append(universe_labels)
 
@@ -199,8 +219,6 @@ class Dataset:
         print("Average Frame of one gait cycle is {}".format(self.total_frames / actual_num))  # 115
 
         # self.zero_padding()
-        if padding:
-            self.pad()
         # add the "batch" dimension to fit the model requirement
         self.extend()
 
@@ -237,15 +255,6 @@ class Dataset:
             # cycle index, in this case, I predict the label of each gait cycle of the same person
             # However, now I want to use vote method to determine the final result
             # self.test_cycle_index.append(i + 1)
-
-    def pad(self):
-        for i in range(len(self.train_data)):
-            self.train_data[i] = padding(self.train_data[i], avg=self.cfg.avg_frames)
-
-        # refer to majority vote , so it would be clear that test_data is actually a list of lists
-        for i in range(len(self.test_data)):
-            for j in range(len(self.test_data[i])):
-                self.test_data[i][j] = padding(self.test_data[i][j], avg=self.cfg.avg_frames)
 
     def zero_padding(self):
         """
