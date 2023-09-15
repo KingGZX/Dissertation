@@ -1,12 +1,13 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import math
 
 
 class PatchEmbed(nn.Module):
-    def __init__(self, feature_size=(120, 22), out_channels=64, in_channels=3, patch_size=4):
+    def __init__(self, feature_size=(120, 22), out_channels=64, in_channels=3, patch_size=(4, 4)):
         super(PatchEmbed, self).__init__()
-        self.patch_num = (feature_size[0] // patch_size) * (feature_size[1] // patch_size)
+        self.patch_num = (feature_size[0] // patch_size[0]) * (feature_size[1] // patch_size[1])
         self.fs = feature_size
         self.patch_size = patch_size
         self.norm = nn.LayerNorm(out_channels)
@@ -177,16 +178,28 @@ class SABlock(nn.Module):
 
 
 class Uniformer(nn.Module):
-    def __init__(self, in_channels, num_classes=3,
-                 qkv_bias=True, qk_scale=None):
+    def __init__(self, in_channels, num_classes: list, frames=120, joints=22,
+                 qkv_bias=True, qk_scale=None, patchs=[(4, 4), (2, 2)]):
         super(Uniformer, self).__init__()
         self.num_classes = num_classes
-        self.patch_embed1 = PatchEmbed(in_channels=in_channels, out_channels=64, patch_size=4)
+        self.patch_embed1 = PatchEmbed(feature_size=(frames, joints),
+                                       in_channels=in_channels,
+                                       out_channels=64,
+                                       patch_size=patchs[0])
         self.cblock = CBlock(in_channels=64)
-        self.patch_embed2 = PatchEmbed(feature_size=(30, 5), in_channels=64, out_channels=128, patch_size=2)
+        kernel_h, kernel_w = patchs[0][0], patchs[0][1]
+        out_frame = math.floor((frames - kernel_h) / kernel_h) + 1
+        out_joints = math.floor((joints - kernel_w) / kernel_w) + 1
+        self.patch_embed2 = PatchEmbed(feature_size=(out_frame, out_joints),
+                                       in_channels=64,
+                                       out_channels=128,
+                                       patch_size=patchs[1])
         self.sa = SABlock(dim=128, qkv_bias=qkv_bias, qk_scale=qk_scale, drop=0.4)
 
-        self.classify_head = nn.Linear(128, num_classes)
+        self.classify_head = nn.ModuleList([
+            nn.Linear(128, num_class)
+            for num_class in num_classes
+        ])
 
     def forward(self, x):
         x = self.patch_embed1(x)
@@ -198,6 +211,9 @@ class Uniformer(nn.Module):
         if len(x.shape) == 1:   # test instances are fed to the model one by one, so the squeeze above generate errors
             x = torch.unsqueeze(x, dim=0)
 
-        out = self.classify_head(x)
+        out = list()
+        for classification_head in self.classify_head:
+            item_out = classification_head(x)
+            out.append(item_out)
 
-        return [out]
+        return out

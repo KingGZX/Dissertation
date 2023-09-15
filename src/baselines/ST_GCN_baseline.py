@@ -110,6 +110,7 @@ class ST_GCN_Block(nn.Module):
         x1 = self.gcn(x, adjacent)
         x2 = self.residual(x)
         out = self.relu(self.tcn(x1) + x2)
+        # out = self.relu(x1 + x2)
         return out
 
 
@@ -206,8 +207,8 @@ class ST_GCN(nn.Module):
             # ST GCN Tiny
             ST_GCN_Block(t_kernel, 1, 1, in_channels, 32, residual=False),
             GAT_Block(in_channels=32, hidden_dim=32),
-            ST_GCN_Block(t_kernel, 1, 2, 32, 64),
-            ST_GCN_Block(t_kernel, 1, 1, 64, 64),
+            ST_GCN_Block(t_kernel, 1, 2, 32, 64, residual=True),
+            ST_GCN_Block(t_kernel, 1, 1, 64, 64, residual=True),
         ))
 
         if edge_importance_weighting:
