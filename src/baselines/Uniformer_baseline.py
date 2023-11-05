@@ -38,16 +38,23 @@ class CMlp(nn.Module):
         super(CMlp, self).__init__()
         out_channels = out_channels or in_channels
         hidden = hidden or in_channels
+
+        # overfitting
         self.fc1 = nn.Conv2d(in_channels, hidden, 1)
         self.act = nn.GELU()
         self.fc2 = nn.Conv2d(hidden, out_channels, 1)
-        self.drop = nn.Dropout(0.3)
+        self.drop = nn.Dropout(0.5)
+
+        # self.fc1 = nn.Conv2d(in_channels, out_channels, 1)
+        # self.drop = nn.Dropout(0.5)
 
     def forward(self, x):
         """
         _param: x
                 is the result of shallow layer attention (relation aggregator)
         """
+        # return self.drop(self.fc1(x))
+
         return self.drop(self.fc2(self.drop(self.act(self.fc1(x)))))
 
 
@@ -64,7 +71,10 @@ class CBlock(nn.Module):
         self.norm1 = nn.BatchNorm2d(in_channels)
         self.conv1 = nn.Conv2d(in_channels, in_channels, 1)  # linear transformation of each patch
         self.shallow_sa = nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1, groups=in_channels)
-        self.conv2 = nn.Conv2d(in_channels, in_channels, 1)
+
+        # test overfitting
+        # self.conv2 = nn.Conv2d(in_channels, in_channels, 1)
+
         self.norm2 = nn.BatchNorm2d(in_channels)
         self.mlp = CMlp(in_channels=in_channels)
 
@@ -86,7 +96,8 @@ class CBlock(nn.Module):
             3.  shallow_sa: depth-wise convolution, to simulate multi-heads attention in local area
             4.  conv2: 1x1 conv, 
         """
-        x = x + self.conv2(self.shallow_sa(self.conv1(self.norm1(x))))
+        # x = x + self.conv2(self.shallow_sa(self.conv1(self.norm1(x))))
+        x = x + self.shallow_sa(self.conv1(self.norm1(x)))
 
         # after attention, use a linear map to fuse features better.
         x = x + self.mlp(self.norm2(x))
@@ -98,10 +109,15 @@ class MLP(nn.Module):
         super(MLP, self).__init__()
         out_channels = out_channels or in_channels
         hidden = hidden or in_channels
+
+        # overfitting
         self.fc1 = nn.Linear(in_channels, hidden)
         self.act = nn.GELU()
         self.fc2 = nn.Linear(hidden, out_channels)
-        self.drop = nn.Dropout(0.3)
+        self.drop = nn.Dropout(0.5)
+
+        # self.fc1 = nn.Linear(in_channels, out_channels)
+        # self.drop = nn.Dropout(0.5)
 
     def forward(self, x):
         """
@@ -110,6 +126,8 @@ class MLP(nn.Module):
                 for original SA, it's usually in shape [batch, seq_len, token_len]
                 so Linear Layer is used instead of conv1x1 in shallow layers
         """
+        # return self.drop(self.fc1(x))
+
         return self.drop(self.fc2(self.drop(self.act(self.fc1(x)))))
 
 
@@ -178,7 +196,7 @@ class SABlock(nn.Module):
 
 
 class Uniformer(nn.Module):
-    def __init__(self, in_channels, num_classes: list, frames=120, joints=22,
+    def __init__(self, in_channels, num_classes: list, frames=120, joints=23,
                  qkv_bias=True, qk_scale=None, patchs=[(4, 4), (2, 2)]):
         super(Uniformer, self).__init__()
         self.num_classes = num_classes
@@ -208,7 +226,7 @@ class Uniformer(nn.Module):
         x = self.sa(x)
 
         x = F.avg_pool2d(x, x.size()[2:]).squeeze()
-        if len(x.shape) == 1:   # test instances are fed to the model one by one, so the squeeze above generate errors
+        if len(x.shape) == 1:  # test instances are fed to the model one by one, so the squeeze above generate errors
             x = torch.unsqueeze(x, dim=0)
 
         out = list()
