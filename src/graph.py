@@ -18,18 +18,21 @@ class Graph:
         self.get_adjacency()
 
     def get_edges(self):
-        self.num_node = len(Config.nodes)
+        if Config.lower:
+            self.num_node = len(Config.lower_nodes)
+        else:
+            self.num_node = len(Config.nodes)
         self_link = [(i, i) for i in range(self.num_node)]
 
         # pelvis -> neck, upper leg   neck -> head, shoulder
-        neighbor_link = [(0, 1), (0, 11), (0, 15), (1, 2), (1, 3), (1, 7),
-                         # shoulder -> upper arm  upper arm ->forearm
-                         (3, 4), (4, 5), (5, 6), (7, 8), (8, 9), (9, 10),
-                         # upper leg -> lower leg, lower leg -> foot,  foot -> toe
-                         (11, 12), (12, 13), (13, 14), (15, 16), (16, 17), (17, 18)]
+        # without spine
+        # neighbor_link = [(0, 1), (0, 11), (0, 15), (1, 2), (1, 3), (1, 7),
+        #                  # shoulder -> upper arm  upper arm ->forearm
+        #                  (3, 4), (4, 5), (5, 6), (7, 8), (8, 9), (9, 10),
+        #                  # upper leg -> lower leg, lower leg -> foot,  foot -> toe
+        #                  (11, 12), (12, 13), (13, 14), (15, 16), (16, 17), (17, 18)]
 
         # with "CoM" link
-
         # neighbor_link = [(0, 1), (0, 11), (0, 15), (1, 2), (1, 3), (1, 7),
         #                  # shoulder -> upper arm  upper arm ->forearm
         #                  (3, 4), (4, 5), (5, 6), (7, 8), (8, 9), (9, 10),
@@ -39,13 +42,21 @@ class Graph:
         #                  (0, 19), (1, 19)]
 
         # with spine
-        # neighbor_link = [(0, 4), (0, 14), (0, 18), (4, 5), (4, 6), (4, 10),
-        #                  # shoulder -> upper arm  upper arm ->forearm
-        #                  (6, 7), (7, 8), (8, 9), (10, 11), (11, 12), (12, 13),
-        #                  # upper leg -> lower leg, lower leg -> foot,  foot -> toe
-        #                  (14, 15), (15, 16), (16, 17), (18, 19), (19, 20), (20, 21),
-        #                  # spines
-        #                  (0, 1), (1, 2), (2, 3)]
+        if Config.lower:
+            # only contain lower body
+            neighbor_link = [(0, 1), (0, 5),
+                             (1, 2), (2, 3), (3, 4),
+                             (5, 6), (6, 7), (7, 8)]
+        else:
+            neighbor_link = [(0, 5), (0, 15), (0, 19), (5, 6), (5, 7), (5, 11),
+                             # shoulder -> upper arm  upper arm ->forearm
+                             (7, 8), (8, 9), (9, 10), (11, 12), (12, 13), (13, 14),
+                             # upper leg -> lower leg, lower leg -> foot,  foot -> toe
+                             (15, 16), (16, 17), (17, 18), (19, 20), (20, 21), (21, 22),]
+                             # spines, since their features are estimated, ignore
+                             # (0, 1), (1, 2), (2, 3)]
+
+
 
         self.edge = self_link + neighbor_link
         self.center = 0  # use pelvis as the center of body
@@ -56,10 +67,14 @@ class Graph:
         which means, as long as there's path between 2 nodes and the distance is valid
         then the graph has an edge 1.
         """
-        self.adjacency = np.zeros((1, self.num_node, self.num_node))
-        self.adjacency[0][self.hop_dis <= self.max_hop] = 1
-        # normalization
-        self.adjacency[0] = undirected_graph_norm(self.adjacency[0])
+        self.adjacency = np.zeros((self.num_node, self.num_node))
+        self.adjacency[self.hop_dis <= self.max_hop] = 1
+        self.adjacency = undirected_graph_norm(self.adjacency)
+
+        # self.adjacency = np.zeros((1, self.num_node, self.num_node))
+        # self.adjacency[0][self.hop_dis <= self.max_hop] = 1
+        # # normalization
+        # self.adjacency[0] = undirected_graph_norm(self.adjacency[0])
 
 
 def get_hop_distance(num_node, edge, max_hop=1):
