@@ -2,6 +2,7 @@ import lttb
 from scipy import interpolate
 import numpy as np
 import math
+from utils.augment import DTW
 
 """
 aim of this script is to pad the gait cycles,
@@ -35,7 +36,7 @@ def downsample(data, n_out):
 
     frames, features = data.shape
 
-    # stack the frames vertically to the most left side of original data matrix
+    # stack the frames vertically to the leftest side of original data matrix
     time = np.arange(1, frames + 1).reshape(-1, 1)
     data = np.hstack((time, data))
     features += 1
@@ -92,6 +93,7 @@ def padding(data, avg=120):
     frames, channels, joints = data.shape
 
     data = np.reshape(data, newshape=(frames, -1))
+    new_data = data
 
     if frames < avg:
         ratio = avg / frames
@@ -102,19 +104,22 @@ def padding(data, avg=120):
         f = interpolate.interp2d(x, y, z, kind="linear")
 
         ts = np.arange(1, avg + 1)
-        data = f(x, ts)
+        new_data = f(x, ts)
 
     elif frames > avg:
         # downsample
         # "downsample" api of package lttb only supports 2 columns data
         # the first column needs to be time, increasing
-        # the second columns represents the observations
+        # the second column represents the observations
         # thus, it's not very helpful to our dataset
         # lttb.downsample()
 
-        data = downsample(data, n_out=avg)
+        new_data = downsample(data, n_out=avg)
 
-    data = np.reshape(data, newshape=(channels, avg, joints))
+    # dist = DTW(data, new_data)
+    # dist /= 1e4
 
-    return data
+    new_data = np.reshape(new_data, newshape=(channels, avg, joints))
+
+    return new_data
 
