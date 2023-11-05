@@ -66,9 +66,9 @@ class GCNUnit(nn.Module):
         """
         x1 = self.dropout(self.conv(x))
         b, c, w, h = x1.shape
-        x1 = x1.view(b, self.kernel_size, c // self.kernel_size, w, h)
+        # x1 = x1.view(b, self.kernel_size, c // self.kernel_size, w, h)
 
-        out = torch.einsum("bkcfj, kjw -> bcfw", (x1, adjacent))
+        out = torch.einsum("bcfj, jh -> bcfh", (x1, adjacent))
         return out
 
 
@@ -114,6 +114,31 @@ class ST_GCN_Block(nn.Module):
         return out
 
 
+class ST_GAT_Block(nn.Module):
+    def __init__(self, t_kernel, stride, in_channels, hidden_dim, head=1):
+        """
+        :param t_kernel:       currently it's still the conv kernel size of temporal unit
+        :param stride:
+        :param in_channels:
+        :param hidden_dim:     graph attention hidden dim which is also going to be the output dim
+        :param head:
+        """
+        super(ST_GAT_Block, self).__init__()
+        self.gat = GAT_Block(n_heads=head, in_channels=in_channels, hidden_dim=hidden_dim)
+        """
+        initially I can't find a effective way to design a temporal graph attention mechanism
+        thus, original temporal convolution is used
+        """
+        self.tgat = TemporalUnit(t_kernel, stride, hidden_dim)
+        self.relu = nn.ReLU(inplace=True)
+
+    def forward(self, x, adjacent):
+        x1 = self.gat(x, adjacent)
+        out = self.relu(self.tgat(x1))
+
+        return out
+
+
 class mlp_head(nn.Module):
     def __init__(self, in_channels, num_class):
         super(mlp_head, self).__init__()
@@ -135,7 +160,7 @@ class mlp_head(nn.Module):
 
 
 class lstm_head(nn.Module):
-    def __init__(self, in_channels, num_class, hidden, joints=22):
+    def __init__(self, in_channels, num_class, hidden, joints=23):
         super(lstm_head, self).__init__()
         # LSTM Classification Head
         self.rnn = nn.LSTM(batch_first=True,
@@ -205,10 +230,12 @@ class ST_GCN(nn.Module):
             # ST_GCN_Block(t_kernel, 1, 1, 256, 256),
 
             # ST GCN Tiny
-            ST_GCN_Block(t_kernel, 1, 1, in_channels, 32, residual=False),
-            GAT_Block(in_channels=32, hidden_dim=32),
-            ST_GCN_Block(t_kernel, 1, 2, 32, 64, residual=True),
+            ST_GCN_Block(t_kernel, 1, 1, in_channels, 64, residual=False),
+            # ST_GAT_Block(t_kernel, 1, in_channels=64, hidden_dim=64),
             ST_GCN_Block(t_kernel, 1, 1, 64, 64, residual=True),
+            ST_GCN_Block(t_kernel, 1, 2, 64, 128, residual=True),
+            ST_GCN_Block(t_kernel, 1, 1, 128, 128, residual=True),
+            # ST_GAT_Block(t_kernel, 1, in_channels=128, hidden_dim=128),
         ))
 
         if edge_importance_weighting:
@@ -217,7 +244,7 @@ class ST_GCN(nn.Module):
                 for i in self.st_gcn
             ])
 
-        embed_dim = 64
+        embed_dim = 128
 
         if self.head == "lstm":
             self.classify = nn.ModuleList([
