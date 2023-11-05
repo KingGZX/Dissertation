@@ -1,5 +1,16 @@
 import numpy as np
 from scipy.interpolate import CubicSpline
+from fastdtw import fastdtw
+from scipy.spatial.distance import euclidean
+
+
+def DTW(ori, padded):
+    """
+    Dynamic Time Warping to calculate the similarity
+    :return:
+    """
+    distance, _ = fastdtw(ori, padded, dist=euclidean)
+    return distance
 
 
 def Jittering(data: np.ndarray):
@@ -11,8 +22,8 @@ def Jittering(data: np.ndarray):
     """
     assert len(data.shape) == 2, "data shape does not fit this function"
     noise = np.random.normal(0, 0.03, data.shape)
-    data += noise
-    return data
+    new_data = data + noise
+    return new_data
 
 
 def Scaling(data: np.ndarray):
@@ -22,7 +33,8 @@ def Scaling(data: np.ndarray):
     """
     scalingFactor = np.random.normal(loc=1.0, scale=0.1, size=(1, data.shape[1]))
     myNoise = np.matmul(np.ones((data.shape[0], 1)), scalingFactor)
-    return data * myNoise
+    new_data = data * myNoise
+    return new_data
 
 
 def GenerateRandomCurves(data: np.ndarray, sigma=0.2, knot=4):
@@ -51,7 +63,8 @@ def GenerateRandomCurves(data: np.ndarray, sigma=0.2, knot=4):
 
 
 def MagWarp(data: np.ndarray, sigma=0.2):
-    return data * GenerateRandomCurves(data, sigma)
+    new_data = data * GenerateRandomCurves(data, sigma)
+    return new_data
 
 
 def DistortTimesteps(data: np.ndarray, sigma=0.2):
@@ -116,6 +129,20 @@ def Permutation(X, nPerm=4, minSegLength=10):
     return X_new
 
 
+def Combanition(data):
+    # 1. time_warping + Magnitude_Warping
+    new_d1 = MagWarp(TimeWarp(data))
+    new_d4 = TimeWarp(MagWarp(data))
+    # 2. time_warping + Jittring
+    new_d2 = Jittering(TimeWarp(data))
+    new_d5 = TimeWarp(Jittering(data))
+    # 3. time_warping + scaling
+    new_d3 = Scaling(TimeWarp(data))
+    new_d6 = TimeWarp(Scaling(data))
+
+    return [new_d1, new_d2, new_d3, new_d4, new_d5, new_d6]
+
+
 def augment(data: np.ndarray):
     """
     :param data:
@@ -145,6 +172,12 @@ def augment(data: np.ndarray):
     twp_aug = np.reshape(twp_aug, (frames, joints, channels))
     twp_aug = np.reshape(twp_aug, (channels, frames, joints))
 
-    out = [jit_aug, sca_aug, mag_aug, twp_aug]
+    out = list([jit_aug, sca_aug, mag_aug, twp_aug])
+
+    comb = Combanition(data=n_data)
+    for comb_out in comb:
+        comb_out = np.reshape(comb_out, (frames, joints, channels))
+        comb_out = np.reshape(comb_out, (channels, frames, joints))
+        out.append(comb_out)
 
     return out

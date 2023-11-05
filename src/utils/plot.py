@@ -17,7 +17,28 @@ linestyle_tuple = [
 
      ('dashdotdotted',         (0, (3, 5, 1, 5, 1, 5))),
      ('loosely dashdotdotted', (0, (3, 10, 1, 10, 1, 10))),
-     ('densely dashdotdotted', (0, (3, 1, 1, 1, 1, 1)))]
+     ('densely dashdotdotted', (0, (3, 1, 1, 1, 1, 1)))
+]
+
+scatter_style = [
+    '.',
+    ',',
+    'o',
+    'v',
+    '^',
+    '<',
+    '>',
+    '8',
+    's',
+    'p',
+    '*',
+    '+',
+    'D',
+    'd',
+    'x',
+    '|',
+    '_'
+]
 
 
 def item_acc_loss_draw(epochs, data_list, legend_name, title_name, save_path: str, item_name: str):
@@ -46,7 +67,8 @@ def total_loss_draw(epochs, loss_list, legend_name, title_name, save_path: str, 
 def compare_item_acc_draw(epochs, item_loss_list, legend_name, title_name, save_path: str, item_name: str):
     epochs_list = [i + 1 for i in range(epochs)]
     for i in range(len(item_loss_list)):
-        plt.plot(epochs_list, item_loss_list[i], label=legend_name[i], linestyle=linestyle_tuple[i][1])
+        plt.scatter(epochs_list, item_loss_list[i], marker=scatter_style[i])
+        plt.plot(epochs_list, item_loss_list[i], label=legend_name[i])
     plt.xlabel("epoch")
     plt.legend()
     plt.title(title_name)

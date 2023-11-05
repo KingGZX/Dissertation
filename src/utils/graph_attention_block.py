@@ -10,7 +10,7 @@ class GAT_Block(nn.Module):
     def __init__(self, n_heads=1, in_channels=3, hidden_dim=16, dropout=0.3):
         super(GAT_Block, self).__init__()
         self.in_channels = in_channels
-        self.hidden_dim = hidden_dim
+        self.hidden_dim = hidden_dim // n_heads
         self.heads = n_heads
         self.linear1 = nn.Linear(self.in_channels, self.hidden_dim * n_heads)
         self.linear2 = nn.Linear(2 * self.hidden_dim, 1)
@@ -26,12 +26,14 @@ class GAT_Block(nn.Module):
                 --------but for graph partition, have no idea now ---------
         :return:
         """
+        assert self.hidden_dim % self.heads == 0, "head is not divisible by hidden dim"
         x = torch.permute(x, [0, 2, 3, 1])  # [batch, frames, nodes, channel]
         batch, frames, nodes, channels = x.shape
 
-        x = self.linear1(x)                 # [batch, frames, nodes, hidden_dim * heads]
-
-        x = x.view(batch, self.heads, frames, nodes, self.hidden_dim)
+        # [batch, frames, nodes, hidden_dim * heads]
+        x = self.linear1(x).view(batch, frames, nodes, self.heads, self.hidden_dim)
+        # reshape
+        x = torch.permute(x, [0, 3, 1, 2, 4]).contiguous()
 
         x1 = torch.unsqueeze(x, dim=-2)
         x2 = torch.unsqueeze(x, dim=-3)
@@ -45,13 +47,17 @@ class GAT_Block(nn.Module):
         # [batch, heads, frames, nodes, nodes], the feature map stands for the contribution of Node i to Node j
         x4 = torch.squeeze(x4, dim=-1)
 
-        x4 = F.softmax(x4, dim=-1)
-        x4 = torch.multiply(x4, mask)
         # apply adjacency matrix as the mask to each attention matrix.
         # Element-wise multiplication to eliminate invalid contribution of neighbor node
+        x4 = torch.multiply(x4, mask)
+
+        x4 = F.softmax(x4, dim=-1)
+
+        x4 = self.dropout(x4)
 
         out = torch.einsum("bhfnn, bhfnj -> bhfnj", x4, x)      # [batch, head, frame, nodes, hidden_dim]
 
+        out = torch.permute(out, [0, 2, 3, 1, 4]).contiguous()
         out = out.view(batch, frames, nodes, -1)                # [batch, frames, nodes, hidden_dim * heads]
 
         out = torch.permute(out, [0, 3, 1, 2])  # back to [batch, channel, frame, joints]
